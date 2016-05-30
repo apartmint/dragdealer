@@ -10,11 +10,6 @@
   if (typeof define === 'function' && define.amd) {
     // AMD. Register as an anonymous module.
     define(factory);
-  } else if (typeof module === 'object' && module.exports) {
-    // Node. Does not work with strict CommonJS, but
-    // only CommonJS-like enviroments that support module.exports,
-    // like Node.
-    module.exports.Dragdealer = factory();
   } else {
     // Browser globals
     root.Dragdealer = factory();
@@ -232,9 +227,19 @@ Dragdealer.prototype = {
     handleClass: 'handle',
     css3: true,
     activeClass: 'active',
-    tapping: true
+    tapping: true,
+    triStep: false
   },
   init: function() {
+    // init apartmint settings
+    if (this.options.triStep) {
+      this.options.steps = 5;
+      this.options.loose = false;
+      this.options.slide = false;
+      this.options.horizontal = true;
+      this.options.requestAnimationFrame = true;
+    }
+
     if (this.options.css3) {
       triggerWebkitHardwareAcceleration(this.handle);
     }
@@ -250,7 +255,6 @@ Dragdealer.prototype = {
       current: [0, 0],
       target: [0, 0]
     };
-    this.dragStartPosition = {x: 0, y: 0};
     this.change = [0, 0];
     this.stepRatios = this.calculateStepRatios();
 
@@ -297,10 +301,12 @@ Dragdealer.prototype = {
       }
     }
   },
+  // apartmint
   calculateStepRatios: function() {
     var stepRatios = [];
+    var cycleStart = this.options.triStep ? 1 : 0, cycleEnd = this.options.triStep ? 3 : (this.options.steps - 1);
     if (this.options.steps >= 1) {
-      for (var i = 0; i <= this.options.steps - 1; i++) {
+      for (var i = cycleStart; i <= cycleEnd; i++) {
         if (this.options.steps > 1) {
           stepRatios[i] = i / (this.options.steps - 1);
         } else {
@@ -420,12 +426,6 @@ Dragdealer.prototype = {
     this.startDrag();
   },
   onDocumentMouseMove: function(e) {
-    if ((e.clientX - this.dragStartPosition.x) === 0 &&
-        (e.clientY - this.dragStartPosition.y) === 0) {
-      // This is required on some Windows8 machines that get mouse move events without actual mouse movement
-      return;
-    }
-
     Cursor.refresh(e);
     if (this.dragging) {
       this.activity = true;
@@ -500,9 +500,6 @@ Dragdealer.prototype = {
       this.getStepNumber(this.value.target[1])
     ];
   },
-  getStepWidth: function () {
-    return Math.abs(this.bounds.availWidth / this.options.steps);
-  },
   getValue: function() {
     return this.value.target;
   },
@@ -552,7 +549,6 @@ Dragdealer.prototype = {
     this.dragging = true;
     this.setWrapperOffset();
 
-    this.dragStartPosition = {x: Cursor.x, y: Cursor.y};
     this.offset.mouse = [
       Cursor.x - Position.get(this.handle)[0],
       Cursor.y - Position.get(this.handle)[1]
@@ -567,11 +563,6 @@ Dragdealer.prototype = {
       return;
     }
     this.dragging = false;
-    var deltaX = this.bounds.availWidth === 0 ? 0 :
-          ((Cursor.x - this.dragStartPosition.x) / this.bounds.availWidth),
-        deltaY = this.bounds.availHeight === 0 ? 0 :
-          ((Cursor.y - this.dragStartPosition.y) / this.bounds.availHeight),
-        delta = [deltaX, deltaY];
 
     var target = this.groupClone(this.value.current);
     if (this.options.slide) {
@@ -581,7 +572,7 @@ Dragdealer.prototype = {
     }
     this.setTargetValue(target);
     this.wrapper.className = this.wrapper.className.replace(' ' + this.options.activeClass, '');
-    this.callDragStopCallback(delta);
+    this.callDragStopCallback();
   },
   callAnimationCallback: function() {
     var value = this.value.current;
@@ -605,9 +596,9 @@ Dragdealer.prototype = {
       this.options.dragStartCallback.call(this, this.value.target[0], this.value.target[1]);
     }
   },
-  callDragStopCallback: function(delta) {
+  callDragStopCallback: function() {
     if (typeof(this.options.dragStopCallback) == 'function') {
-      this.options.dragStopCallback.call(this, this.value.target[0], this.value.target[1], delta);
+      this.options.dragStopCallback.call(this, this.value.target[0], this.value.target[1]);
     }
   },
   animateWithRequestAnimationFrame: function (time) {
@@ -679,11 +670,28 @@ Dragdealer.prototype = {
     }
   },
   renderHandlePosition: function() {
-
     var transform = '';
     if (this.options.css3 && StylePrefix.transform) {
       if (this.options.horizontal) {
-        transform += 'translateX(' + this.offset.current[0] + 'px)';
+        // apartmint "flow"
+        var currentPos = Math.abs(this.offset.current[0]);
+        var calculatedBounds = this.calculateBounds();
+        var defaultPositionX = Math.abs(calculatedBounds.availWidth / 2);
+        var maxPositionX = Math.abs(calculatedBounds.availWidth / 4);
+        if (this.options.triStep) {
+          if (currentPos >= maxPositionX && currentPos <= defaultPositionX + maxPositionX) {
+            transform += 'translateX(' + this.offset.current[0] + 'px)';
+          } else {
+            if (currentPos < maxPositionX) {
+              transform += 'translateX(-' + maxPositionX + 'px)';
+            }
+            if (currentPos > defaultPositionX + maxPositionX) {
+              transform += 'translateX(-' + (defaultPositionX + maxPositionX) + 'px)';
+            }
+          }
+        } else {
+          transform += 'translateX(' + this.offset.current[0] + 'px)';
+        }
       }
       if (this.options.vertical) {
         transform += ' translateY(' + this.offset.current[1] + 'px)';
